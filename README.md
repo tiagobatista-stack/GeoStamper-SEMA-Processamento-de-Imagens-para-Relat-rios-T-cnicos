@@ -15,4 +15,4 @@ Cria o carimbo: Gera uma barra inferior robusta (24% da altura da foto) para os 
 Protege a leitura: Ajusta o tamanho do texto para que a data e a hora nunca fiquem em cima das coordenadas.
 
 Como rodar
-Basta instalar as bibliotecas (pip install Pillow matplotlib), colocar suas fotos na pasta e rodar o geo_stamper.py. Use a função de preview inclusa para ver como o texto se comporta antes de processar tudo.
+Basta instalar as bibliotecas (pip install Pillow matplotlib), colocar suas fotos na pasta e rodar o geo_stamper.py.
