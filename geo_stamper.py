@@ -207,7 +207,7 @@ def _ler_exif_jpeg(caminho):
         return lat, lon, altitude, data_fmt, hora_fmt
 
     except Exception:
-        return None, None, None, None, None, None
+        return None, None, None, None, None
 
 
 def ler_exif_tiff(caminho):
@@ -575,6 +575,13 @@ def salvar_resultado(img, saida):
 
 def processar_arquivo(caminho_in, pasta_out):
     lat, lon, altitude, data_fmt, hora_fmt = ler_exif(caminho_in)
+
+    # Fallback: usa a data de modificação do arquivo quando não houver data EXIF
+    if not data_fmt:
+        ts = os.path.getmtime(caminho_in)
+        dt = datetime.fromtimestamp(ts)
+        data_fmt = dt.strftime("%d/%m/%Y")
+        hora_fmt = dt.strftime("%H:%M:%S")
 
     if lat is None and lon is None and altitude is None and not data_fmt and not hora_fmt:
         return "sem_metadados", None
