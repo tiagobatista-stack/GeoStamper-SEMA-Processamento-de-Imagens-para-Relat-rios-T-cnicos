@@ -2,7 +2,7 @@
 SISTEMA DE PROCESSAMENTO E ESTAMPAGEM DE METADADOS GEOGRÁFICOS (v2.0)
 -------------------------------------------------------------------
 Descrição:
-    Este script automatiza a leitura de metadados EXIF (GPS) de imagens (JPG/PNG)
+    Este script automatiza a leitura de metadados EXIF (GPS) de imagens (JPG/PNG/DNG)
     e gera uma nova versão da fotografia com uma barra informativa inferior.
     O foco principal é a legibilidade em relatórios técnicos, utilizando
     hierarquia visual e compensação de escala para reduções de tamanho.
@@ -17,11 +17,12 @@ Parâmetros de Layout Atuais:
     - BAR_HEIGHT_RATIO: 0.24 (24% da altura da imagem para garantir respiro).
     - LABEL_COLOR: Amarelo Ouro para títulos (Máxima distinção visual).
     - Escalonamento: Fontes compensadas para o campo de Data/Hora.
+    - padronização das imagens para inserção em documentos 
 
 Requisitos:
     - Pillow (PIL), Matplotlib (para previews), Pathlib.
 
-Copyright (c) 2026 Autor: Tiago Alexandre Batista - DUDJUINA/SEMA
+Autor: Tiago Alexandre Batista - DUDJUINA/SEMA
 Data: Março de 2026
 """
 
@@ -372,6 +373,14 @@ def formatar_altitude(altitude):
         return "N/A"
     return f"{altitude:.1f} m"
 
+def normalizar_texto_exibicao(lat, lon, altitude, data_fmt, hora_fmt):
+    return {
+        "LATITUDE":  formatar_coord(lat, "lat"),
+        "LONGITUDE": formatar_coord(lon, "lon"),
+        "ALTITUDE":  formatar_altitude(altitude),
+        "DATA":      data_fmt.strip() if data_fmt else "—",
+        "HORA":      hora_fmt.strip() if hora_fmt else "—",
+    }
 
 def medir_texto(draw, texto, fonte):
     bbox = draw.textbbox((0, 0), texto, font=fonte)
@@ -391,77 +400,177 @@ def ajustar_fonte_que_caiba(draw, texto, largura_max, tam_inicial, tam_min=10):
 
 def adicionar_barra(img, lat, lon, altitude, data_fmt, hora_fmt):
     w, h = img.size
-    # Aumentei levemente o mínimo para evitar que o texto saia da barra em fotos pequenas
+
+    MAX_LARGURA = 2000
+    if img.width > MAX_LARGURA:
+        proporcao = MAX_LARGURA / float(img.width)
+        nova_altura = int(float(img.height) * float(proporcao))
+        img = img.resize((MAX_LARGURA, nova_altura), Image.Resampling.LANCZOS)
+
+    w, h = img.size
     barra_h = max(180, min(MAX_BAR_HEIGHT, int(h * BAR_HEIGHT_RATIO)))
 
-    resultado = Image.new("RGB", (w, h + barra_h), (0, 0, 0))
+    resultado = Image.new("RGB", (w, h + barra_h), BAR_BG_COLOR)
     resultado.paste(img.convert("RGB"), (0, 0))
     draw = ImageDraw.Draw(resultado)
 
-   
-    # Linha de topo
+    # Linha superior
     draw.line([(0, h), (w, h)], fill=LABEL_COLOR, width=max(8, barra_h // 20))
 
     col_w = w // 4
-    pad_x = max(35, int(col_w * 0.12))
-    
+    margem_interna = max(20, int(col_w * 0.08))
+    largura_util = col_w - (margem_interna * 2)
+
     rotulos = ["LATITUDE", "LONGITUDE", "ALTITUDE", "DATA / HORA"]
-    valor_1 = [formatar_coord(lat, "lat"), formatar_coord(lon, "lon"), formatar_altitude(altitude), data_fmt or "—"]
+    valor_1 = [
+        formatar_coord(lat, "lat"),
+        formatar_coord(lon, "lon"),
+        formatar_altitude(altitude),
+        data_fmt or "—"
+    ]
     valor_2 = ["", "", "", hora_fmt or "—"]
 
-    largura_util = col_w - (pad_x * 2)
-
-    # Fontes Base
-    fonte_rotulo_base = max(25, barra_h // 5)
-    fonte_valor_base = max(35, barra_h // 2.5) 
+    fonte_rotulo_base = max(22, barra_h // 5)
+    fonte_valor_base = max(34, int(barra_h * 0.30))
 
     for i in range(4):
-        x0 = i * col_w + pad_x
-        y_cursor = h + (barra_h * 0.15)
+        x_col_ini = i * col_w
+        x_col_centro = x_col_ini + (col_w / 2)
 
-        # --- AJUSTE DE TAMANHO PARA DATA/HORA ---
-        # Se for a última coluna (índice 3), reduzimos a fonte em 25% para caber melhor
-        if i == 3:
-            f_val_mult = 0.75  
-            f_rot_mult = 0.90
-        else:
-            f_val_mult = 1.0
-            f_rot_mult = 1.0
+        # Hierarquia visual
+        if i in (0, 1):  # latitude / longitude
+            rot_mult = 1.00
+            val1_mult = 1.18
+            val2_mult = 1.00
+        elif i == 2:     # altitude
+            rot_mult = 0.92
+            val1_mult = 0.88
+            val2_mult = 0.90
+        else:            # data / hora
+            rot_mult = 0.95
+            val1_mult = 1.10
+            val2_mult = 0.90
 
-        # 1. Desenhar Rótulo
-        f_rot = ajustar_fonte_que_caiba(draw, rotulos[i], largura_util, int(fonte_rotulo_base * f_rot_mult), tam_min=20)
-        draw.text((x0, y_cursor), rotulos[i], font=f_rot, fill=LABEL_COLOR)
-        
-        _, h_rot = medir_texto(draw, rotulos[i], f_rot)
-        y_cursor += h_rot + (barra_h * 0.03)
+        # Fontes ajustadas
+        f_rot = ajustar_fonte_que_caiba(
+            draw, rotulos[i], largura_util,
+            int(fonte_rotulo_base * rot_mult), tam_min=18
+        )
+        f_val1 = ajustar_fonte_que_caiba(
+            draw, valor_1[i], largura_util,
+            int(fonte_valor_base * val1_mult), tam_min=22
+        )
 
-        # 2. Desenhar Valor Principal (Data ou Coordenada)
-        f_val1 = ajustar_fonte_que_caiba(draw, valor_1[i], largura_util, int(fonte_valor_base * f_val_mult), tam_min=22)
-        draw.text((x0, y_cursor), valor_1[i], font=f_val1, fill=TEXT_COLOR)
-        
-        # 3. Desenhar Valor Secundário (Hora)
         if valor_2[i]:
-            _, h_v1 = medir_texto(draw, valor_1[i], f_val1)
-            y_cursor += h_v1 + 2 # Espaço curto entre data e hora
-            # A hora fica levemente menor que a data para criar hierarquia
-            f_val2 = ajustar_fonte_que_caiba(draw, valor_2[i], largura_util, int(fonte_valor_base * f_val_mult * 0.9), tam_min=20)
-            draw.text((x0, y_cursor), valor_2[i], font=f_val2, fill=TEXT_COLOR)
+            f_val2 = ajustar_fonte_que_caiba(
+                draw, valor_2[i], largura_util,
+                int(fonte_valor_base * val2_mult), tam_min=18
+            )
+        else:
+            f_val2 = None
+
+        # Medidas dos textos
+        w_rot, h_rot = medir_texto(draw, rotulos[i], f_rot)
+        w_v1, h_v1 = medir_texto(draw, valor_1[i], f_val1)
+
+        gap_rot_val = int(barra_h * 0.045)
+        gap_val1_val2 = int(barra_h * 0.035) if f_val2 else 0
+
+        if f_val2:
+            w_v2, h_v2 = medir_texto(draw, valor_2[i], f_val2)
+            altura_bloco = h_rot + gap_rot_val + h_v1 + gap_val1_val2 + h_v2
+        else:
+            w_v2, h_v2 = 0, 0
+            altura_bloco = h_rot + gap_rot_val + h_v1
+
+        # Centralização vertical do bloco inteiro dentro da barra
+        y_inicio = h + int((barra_h - altura_bloco) / 2)
+
+        # Centralização horizontal por linha
+        x_rot = int(x_col_centro - (w_rot / 2))
+        x_v1 = int(x_col_centro - (w_v1 / 2))
+        x_v2 = int(x_col_centro - (w_v2 / 2)) if f_val2 else 0
+
+        # Segurança para não encostar nas bordas internas da coluna
+        x_min = x_col_ini + margem_interna
+        x_max_rot = x_col_ini + col_w - margem_interna - w_rot
+        x_max_v1 = x_col_ini + col_w - margem_interna - w_v1
+        x_max_v2 = x_col_ini + col_w - margem_interna - w_v2 if f_val2 else 0
+
+        x_rot = max(x_min, min(x_rot, x_max_rot))
+        x_v1 = max(x_min, min(x_v1, x_max_v1))
+        if f_val2:
+            x_v2 = max(x_min, min(x_v2, x_max_v2))
+
+        # Desenho
+        y_rot = y_inicio
+        y_v1 = y_rot + h_rot + gap_rot_val
+
+        draw.text((x_rot, y_rot), rotulos[i], font=f_rot, fill=LABEL_COLOR)
+        draw.text((x_v1, y_v1), valor_1[i], font=f_val1, fill=TEXT_COLOR)
+
+        if f_val2:
+            y_v2 = y_v1 + h_v1 + gap_val1_val2
+            draw.text((x_v2, y_v2), valor_2[i], font=f_val2, fill=TEXT_COLOR)
 
         # Divisórias
         if i > 0:
-            draw.line([(i * col_w, h + (barra_h * 0.25)), (i * col_w, h + (barra_h * 0.75))], fill=(100,100,100), width=4)
+            x_div = i * col_w
+            draw.line(
+                [(x_div, h + int(barra_h * 0.24)), (x_div, h + int(barra_h * 0.78))],
+                fill=(100, 100, 100),
+                width=3
+            )
 
     return resultado
 # ══════════════════════════════════════════════
 # PROCESSAMENTO
 # ══════════════════════════════════════════════
 
+def redimensionar_e_padronizar(img):
+    """
+    Padroniza a resolução para relatórios e garante que a imagem esteja em RGB.
+    """
+    # 1. Garante que a imagem está no modo de cor correto (evita erro em PNG/HEIC)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # 2. Define um teto de resolução (2000px é o ideal para PDFs técnicos)
+    MAX_RES = 2000
+    w, h = img.size
+    
+    if w > MAX_RES or h > MAX_RES:
+        if w > h:
+            nova_largura = MAX_RES
+            nova_altura = int((h * MAX_RES) / w)
+        else:
+            nova_altura = MAX_RES
+            nova_largura = int((w * MAX_RES) / h)
+        
+        # Uso do Resampling.LANCZOS para manter a nitidez dos detalhes ambientais
+        img = img.resize((nova_largura, nova_altura), Image.Resampling.LANCZOS)
+    
+    return img
+
 def salvar_resultado(img, saida):
-    ext = saida.suffix.lower()
-    if ext == ".png":
-        img.save(str(saida), compress_level=PNG_COMPRESS_LEVEL)
-    else:
-        img.save(str(saida), quality=JPEG_QUALITY, subsampling=0, optimize=True)
+    """
+    Salva em JPEG otimizado, forçando a extensão correta.
+    """
+    caminho_jpg = saida.with_suffix(".jpg")
+
+    # Se a imagem tiver canal Alpha (transparência), precisamos converter para RGB,
+    # caso contrário o JPEG dará erro.
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    img.save(
+        str(caminho_jpg),
+        "JPEG",
+        quality=JPEG_QUALITY,
+        optimize=True,
+        progressive=True
+    )
+    return caminho_jpg
 
 
 def processar_arquivo(caminho_in, pasta_out):
@@ -533,45 +642,62 @@ def main():
     print(f"Erros              : {erros}")
     print("─" * 64)
 
-'''
+
 if __name__ == "__main__":
-    main()
-'''
 
-from pathlib import Path
+    print("─" * 60)
+    print("PROCESSADOR DE METADADOS GEOGRÁFICOS DE IMAGENS")
+    print("─" * 60)
 
-# --- DEFINA AQUI SEUS CAMINHOS ---
-pasta_entrada = r"C:/Users/tiagobatista/Downloads/TesteFotos"  # Use 'r' antes das aspas para evitar erros de barra
-pasta_saida = r"C:/Users/tiagobatista/Downloads/TesteFotos/saida_com_barra"
+    pasta_entrada = input("Informe o caminho da pasta com as fotos: ").strip()
 
-# --- LÓGICA DE EXECUÇÃO ---
-path_in = Path(pasta_entrada)
-path_out = Path(pasta_saida)
+    if not pasta_entrada:
+        print("Nenhuma pasta informada. Encerrando.")
+        sys.exit(1)
 
-if not path_in.exists():
-    print(f"[ERRO] Pasta não encontrada: {path_in}")
-else:
+    path_in = Path(pasta_entrada)
+
+    if not path_in.exists():
+        print(f"[ERRO] Pasta não encontrada: {path_in}")
+        sys.exit(1)
+
+    path_out = path_in / "saida_com_barra"
     path_out.mkdir(parents=True, exist_ok=True)
+
     fotos = listar_imagens(path_in)
 
     if not fotos:
         print(f"Nenhuma imagem encontrada em: {path_in.resolve()}")
-    else:
-        print(f"Processando {len(fotos)} fotos...")
-        ok, sem_meta, erros = 0, 0, 0
+        sys.exit(0)
 
-        for foto in fotos:
-            try:
-                status, saida = processar_arquivo(foto, path_out)
-                if status == "ok":
-                    ok += 1
-                    print(f"[OK ] {foto.name}")
-                else:
-                    sem_meta += 1
-                    print(f"[SKIP] {foto.name} (sem metadados)")
-            except Exception as e:
-                erros += 1
-                print(f"[ERRO] {foto.name}: {e}")
+    print("─" * 60)
+    print(f"Pasta de entrada : {path_in.resolve()}")
+    print(f"Pasta de saída   : {path_out.resolve()}")
+    print(f"Fotos encontradas: {len(fotos)}")
+    print("─" * 60)
 
-        print("-" * 30)
-        print(f"Concluído! Sucesso: {ok} | Sem Metadados: {sem_meta} | Erros: {erros}")
+    ok = 0
+    sem_meta = 0
+    erros = 0
+
+    for foto in fotos:
+        try:
+            status, saida = processar_arquivo(foto, path_out)
+
+            if status == "ok":
+                ok += 1
+                print(f"[OK ] {foto.name}")
+
+            else:
+                sem_meta += 1
+                print(f"[SKIP] {foto.name} (sem metadados EXIF)")
+
+        except Exception as e:
+            erros += 1
+            print(f"[ERRO] {foto.name}: {e}")
+
+    print("─" * 60)
+    print(f"Processadas : {ok}")
+    print(f"Sem EXIF    : {sem_meta}")
+    print(f"Erros       : {erros}")
+    print("─" * 60)
