@@ -31,6 +31,7 @@ import struct
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
+import os
 
 # ─────────────────────────────────────────────
 # CONFIGURAÇÕES
@@ -600,54 +601,6 @@ def listar_imagens(pasta_in):
         f for f in pasta_in.iterdir()
         if f.is_file() and f.suffix.lower() in EXTENSOES
     )
-
-
-def main():
-    pasta_in = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
-    pasta_out = Path(sys.argv[2]) if len(sys.argv) > 2 else pasta_in / "saida_com_barra"
-
-    if not pasta_in.exists():
-        print(f"[ERRO] Pasta não encontrada: {pasta_in}")
-        sys.exit(1)
-
-    pasta_out.mkdir(parents=True, exist_ok=True)
-    fotos = listar_imagens(pasta_in)
-
-    if not fotos:
-        print(f"Nenhuma imagem encontrada em: {pasta_in.resolve()}")
-        sys.exit(0)
-
-    print("─" * 64)
-    print(f"Entrada : {pasta_in.resolve()}")
-    print(f"Saída   : {pasta_out.resolve()}")
-    print(f"Fotos   : {len(fotos)}")
-    print("─" * 64)
-
-    ok = 0
-    sem_meta = 0
-    erros = 0
-
-    for foto in fotos:
-        try:
-            status, saida = processar_arquivo(foto, pasta_out)
-            if status == "ok":
-                ok += 1
-                print(f"[OK ] {foto.name} -> {saida.name}")
-            else:
-                sem_meta += 1
-                print(f"[SKIP] {foto.name} (sem GPS/data EXIF)")
-        except RuntimeError as e:
-            erros += 1
-            print(f"[ERRO] {foto.name} -> {e}")
-        except Exception as e:
-            erros += 1
-            print(f"[ERRO] {foto.name} -> {e}")
-
-    print("─" * 64)
-    print(f"Processadas        : {ok}")
-    print(f"Sem metadados úteis: {sem_meta}")
-    print(f"Erros              : {erros}")
-    print("─" * 64)
 
 
 if __name__ == "__main__":
